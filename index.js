@@ -1,8 +1,7 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
-const { DisTube } = require('distube');
-const { YtDlpPlugin } = require('@distube/yt-dlp');
-const { joinVoiceChannel } = require('@discordjs/voice');
+require("dotenv").config();
+const { Client, GatewayIntentBits } = require("discord.js");
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
+const play = require("play-dl");
 
 const client = new Client({
   intents: [
@@ -13,61 +12,121 @@ const client = new Client({
   ]
 });
 
-const distube = new DisTube(client, {
-  leaveOnEmpty: true,
-  plugins: [new YtDlpPlugin()]
+const prefix = "!";
+const queue = new Map();
+
+client.once("ready", () => {
+  console.log(✅ Logged in as ${client.user.tag});
 });
 
-client.once('ready', () => {
-  console.log(`✅ Bot aktif sebagai ${client.user.tag}`);
-});
+client.on("messageCreate", async message => {
+  if (!message.content.startsWith(prefix) || message.author.bot) return;
 
-client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) return;
-
-  const args = message.content.split(' ');
+  const args = message.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
+  const serverQueue = queue.get(message.guild.id);
 
-  // !play <url or query>
-  if (command === '!play') {
-    if (!message.member.voice.channel) {
-      return message.reply('❌ Kamu harus join voice channel dulu!');
-    }
-    const query = args.join(' ');
-    if (!query) return message.reply('🎵 Masukkan judul lagu atau link YouTube!');
-
-    distube.play(message.member.voice.channel, query, {
-      textChannel: message.channel,
-      member: message.member
-    });
-  }
-
-  if (command === '!skip') {
-    distube.skip(message);
-  }
-
-  if (command === '!stop') {
-    distube.stop(message);
-    message.channel.send('⏹️ Musik dihentikan.');
-  }
-
-  if (command === '!queue') {
-    const queue = distube.getQueue(message);
-    if (!queue) return message.reply('Queue kosong.');
-    message.channel.send('🎶 Queue:\n' + queue.songs.map((s, i) =>
-      `${i + 1}. ${s.name} - \`${s.formattedDuration}\``).join('\n'));
+  if (command === "play") {
+    execute(message, args, serverQueue);
+  } else if (command === "skip") {
+    skip(message, serverQueue);
+  } else if (command === "stop") {
+    stop(message, serverQueue);
+  } else if (command === "pause") {
+    pause(message, serverQueue);
+  } else if (command === "resume") {
+    resume(message, serverQueue);
   }
 });
 
-// Event distube
-distube
-  .on('playSong', (queue, song) =>
-    queue.textChannel.send(`▶️ Memutar: **${song.name}** - \`${song.formattedDuration}\``))
-  .on('addSong', (queue, song) =>
-    queue.textChannel.send(`➕ Ditambahkan: **${song.name}** - \`${song.formattedDuration}\``))
-  .on('error', (channel, error) => {
-    console.error(error);
-    channel.send('❌ Terjadi error saat memutar lagu!');
+async function execute(message, args, serverQueue) {
+  const voiceChannel = message.member?.voice.channel;
+  if (!voiceChannel) return message.reply("❌ Masuk ke voice channel dulu!");
+
+  const query = args.join(" ");
+  if (!query) return message.reply("❌ Masukkan link/nama lagu YouTube.");
+
+  const yt_info = await play.search(query, { limit: 1 });
+  if (!yt_info || yt_info.length < 1) return message.reply("❌ Lagu tidak ditemukan.");
+
+  const song = { title: yt_info[0].title, url: yt_info[0].url };
+
+  if (!serverQueue) {
+    const queueConstruct = {
+      voiceChannel,
+      connection: null,
+      songs: [],
+      player: createAudioPlayer(),
+    };
+
+    queue.set(message.guild.id, queueConstruct);
+    queueConstruct.songs.push(song);
+
+    try {
+      const connection = joinVoiceChannel({
+        channelId: voiceChannel.id,
+        guildId: message.guild.id,
+        adapterCreator: message.guild.voiceAdapterCreator
+      });
+      queueConstruct.connection = connection;
+      playSong(message.guild, queueConstruct.songs[0]);
+    } catch (err) {
+      console.error(err);
+      queue.delete(message.guild.id);
+      return message.reply("❌ Error saat mencoba join VC.");
+    }
+  } else {
+    serverQueue.songs.push(song);
+    return message.reply(🎶 Ditambahkan ke antrian: **${song.title}**);
+  }
+}
+
+async function playSong(guild, song) {
+  const serverQueue = queue.get(guild.id);
+  if (!song) {
+    serverQueue.connection.destroy();
+    queue.delete(guild.id);
+    return;
+  }
+
+  const stream = await play.stream(song.url);
+  const resource = createAudioResource(stream.stream, { inputType: stream.type });
+
+  serverQueue.player.play(resource);
+  serverQueue.connection.subscribe(serverQueue.player);
+
+  serverQueue.player.on(AudioPlayerStatus.Idle, () => {
+    serverQueue.songs.shift();
+    playSong(guild, serverQueue.songs[0]);
   });
+
+  const channel = serverQueue.voiceChannel;
+  channel.send(🎵 Sekarang memutar: **${song.title}**);
+}
+
+function skip(message, serverQueue) {
+  if (!serverQueue) return message.reply("❌ Tidak ada lagu yang diputar.");
+  serverQueue.player.stop();
+}
+
+function stop(message, serverQueue) {
+  if (!serverQueue) return message.reply("❌ Tidak ada lagu yang diputar.");
+  serverQueue.songs = [];
+  serverQueue.player.stop();
+  serverQueue.connection.destroy();
+  queue.delete(message.guild.id);
+}
+
+function pause(message, serverQueue) {
+  if (!serverQueue) return message.reply("❌ Tidak ada lagu yang diputar.");
+  serverQueue.player.pause();
+  message.reply("⏸ Musik dijeda.");
+}
+
+function resume(message, serverQueue) {
+  if (!serverQueue) return message.reply("❌ Tidak ada lagu yang diputar.");
+  serverQueue.player.unpause();
+  message.reply("▶ Musik dilanjutkan.");
+}
 
 client.login(process.env.DISCORD_TOKEN);
