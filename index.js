@@ -141,4 +141,4 @@ function resume(message, serverQueue) {
 
 console.log("Loaded token:", process.env.DISCORD_TOKEN ? "[✅ FOUND]" : "[❌ NOT FOUND]");
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.TOKEN);
