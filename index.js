@@ -1,6 +1,11 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
+const {
+  joinVoiceChannel,
+  createAudioPlayer,
+  createAudioResource,
+  AudioPlayerStatus,
+} = require("@discordjs/voice");
 const play = require("play-dl");
 
 const client = new Client({
@@ -8,18 +13,18 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 const prefix = "!";
 const queue = new Map();
 
 client.once("ready", () => {
- console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-client.on("messageCreate", async message => {
+client.on("messageCreate", async (message) => {
   if (!message.content.startsWith(prefix) || message.author.bot) return;
 
   const args = message.content.slice(prefix.length).trim().split(/ +/);
@@ -66,7 +71,7 @@ async function execute(message, args, serverQueue) {
       const connection = joinVoiceChannel({
         channelId: voiceChannel.id,
         guildId: message.guild.id,
-        adapterCreator: message.guild.voiceAdapterCreator
+        adapterCreator: message.guild.voiceAdapterCreator,
       });
       queueConstruct.connection = connection;
       playSong(message.guild, queueConstruct.songs[0]);
@@ -77,7 +82,7 @@ async function execute(message, args, serverQueue) {
     }
   } else {
     serverQueue.songs.push(song);
-    return message.reply(🎶 Ditambahkan ke antrian: **${song.title}**);
+    return message.reply(`🎶 Ditambahkan ke antrian: **${song.title}**`);
   }
 }
 
@@ -100,8 +105,13 @@ async function playSong(guild, song) {
     playSong(guild, serverQueue.songs[0]);
   });
 
-  const channel = serverQueue.voiceChannel;
-  channel.send(🎵 Sekarang memutar: **${song.title}**);
+  // Kirim pesan ke text channel (jika ingin)
+  const textChannel = guild.channels.cache
+    .filter((channel) => channel.isTextBased && channel.viewable)
+    .first();
+  if (textChannel) {
+    textChannel.send(`🎵 Sekarang memutar: **${song.title}**`);
+  }
 }
 
 function skip(message, serverQueue) {
