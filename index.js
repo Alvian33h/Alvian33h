@@ -139,4 +139,6 @@ function resume(message, serverQueue) {
   message.reply("▶ Musik dilanjutkan.");
 }
 
+console.log("Loaded token:", process.env.DISCORD_TOKEN ? "[✅ FOUND]" : "[❌ NOT FOUND]");
+
 client.login(process.env.DISCORD_TOKEN);
