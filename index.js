@@ -16,7 +16,7 @@ const prefix = "!";
 const queue = new Map();
 
 client.once("ready", () => {
-  console.log(✅ Logged in as ${client.user.tag});
+ console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
 client.on("messageCreate", async message => {
